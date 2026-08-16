@@ -51,3 +51,14 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           severity: "HIGH,CRITICAL"
+  sast-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/default        
