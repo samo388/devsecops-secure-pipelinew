@@ -67,3 +67,18 @@ jobs:
             --config auto \
             --error \
             /src       
+  iac-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Checkov IaC scan
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/tf" \
+            bridgecrew/checkov:3.3.8 \
+            -d /tf/infra \
+            --framework terraform \
+            --quiet          
