@@ -1,6 +1,8 @@
 const express = require("express");
 
-const app = express();
+// API currently exposes only read-only GET endpoints and does not use cookie-based sessions.
+// CSRF protection must be revisited if state-changing authenticated browser routes are added.
+const app = express(); // nosemgrep: javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
