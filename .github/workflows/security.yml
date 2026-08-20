@@ -51,6 +51,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           severity: "HIGH,CRITICAL"
+
   sast-scan:
     runs-on: ubuntu-latest
 
@@ -66,7 +67,8 @@ jobs:
             semgrep scan \
             --config auto \
             --error \
-            /src       
+            /src
+
   iac-scan:
     runs-on: ubuntu-latest
 
@@ -81,4 +83,39 @@ jobs:
             bridgecrew/checkov:3.3.8 \
             -d /tf/infra \
             --framework terraform \
-            --quiet          
+            --quiet
+
+  sbom-generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f docker/Dockerfile \
+            -t devsecops-secure-pipeline:${{ github.sha }} \
+            .
+
+      - name: Generate CycloneDX SBOM with Syft
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}:/work" \
+            anchore/syft@sha256:678bfa565b60f747aac0f8e964fe5588a24445b8d0a480e91f6efd70020dfbb0 \
+            devsecops-secure-pipeline:${{ github.sha }} \
+            -o cyclonedx-json=/work/sbom.json
+
+      - name: Validate SBOM
+        run: |
+          python -m json.tool sbom.json > /dev/null
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          if-no-files-found: error
+          retention-days: 14
