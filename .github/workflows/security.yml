@@ -12,6 +12,8 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  packages: write
+  id-token: write
 
 jobs:
   secret-scan:
@@ -141,3 +143,29 @@ jobs:
             devsecops-secure-pipeline:${{ github.sha }} \
             --only-fixed \
             --fail-on high      
+  sign-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Build image
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/devsecops-secure-pipeline:${{ github.sha }}"
+
+          docker build \
+            -f docker/Dockerfile \
+            -t "$IMAGE" \
+            .
+
+      - name: Push image
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/devsecops-secure-pipeline:${{ github.sha }}"
+          docker push "$IMAGE"
