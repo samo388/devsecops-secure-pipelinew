@@ -119,3 +119,24 @@ jobs:
           path: sbom.json
           if-no-files-found: error
           retention-days: 14
+  grype-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f docker/Dockerfile \
+            -t devsecops-secure-pipeline:${{ github.sha }} \
+            .
+
+      - name: Run Grype vulnerability scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253 \
+            devsecops-secure-pipeline:${{ github.sha }} \
+            --fail-on high        
