@@ -169,3 +169,4 @@ jobs:
         run: |
           IMAGE="ghcr.io/${{ github.repository_owner }}/devsecops-secure-pipeline:${{ github.sha }}"
           docker push "$IMAGE"
+      
