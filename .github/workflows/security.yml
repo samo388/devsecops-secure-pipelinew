@@ -139,4 +139,5 @@ jobs:
             -v /var/run/docker.sock:/var/run/docker.sock \
             anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253 \
             devsecops-secure-pipeline:${{ github.sha }} \
-            --fail-on high        
+            --only-fixed \
+            --fail-on high      
