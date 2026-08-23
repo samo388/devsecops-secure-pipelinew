@@ -1,22 +1,28 @@
 # DevSecOps Secure Pipeline
 
-A practical DevSecOps project focused on building a secure CI/CD pipeline and improving container security through automated security checks.
+A practical DevSecOps project for building and testing a secure CI/CD pipeline.
 
-The project demonstrates how security can be integrated into the software delivery lifecycle instead of being treated as a separate step after deployment.
-
----
+The project integrates security checks into the development workflow, covering application code, Docker images, Infrastructure as Code, dependencies, and container image supply chain security.
 
 ## Project Overview
 
-This project includes:
+The repository contains a simple Node.js API used as a base application for testing different DevSecOps controls.
 
-- A simple Node.js API
-- Docker containerization
+Current implementation includes:
+
 - GitHub Actions CI
+- Docker containerization
 - Secret scanning with Gitleaks
+- SAST with Semgrep
+- Dependency monitoring with Dependabot
 - Container vulnerability scanning with Trivy
-- Docker hardening
-- Branch protection and required security checks
+- Vulnerability scanning with Grype
+- Terraform scanning with Checkov
+- SBOM generation with Syft
+- Container publishing to GHCR
+- Container signing with Cosign
+- GitHub OIDC for keyless signing
+- Branch protection and required checks
 
 The application includes a health endpoint:
 
@@ -32,235 +38,382 @@ Response:
 }
 ```
 
----
+## Pipeline
 
-## CI/CD Pipeline
-
-The current pipeline validates the application before merge.
+The repository uses pull requests as the main development workflow.
 
 ```text
 Developer
-    ↓
+    |
+    v
+Feature Branch
+    |
+    v
 Pull Request
-    ↓
-CI Checks
-    ↓
-Security Checks
-    ↓
-Required checks pass
-    ↓
-Merge allowed
+    |
+    +------------------------+
+    |                        |
+    v                        v
+CI Checks               Security Checks
+    |                        |
+    |                 Gitleaks
+    |                 Semgrep
+    |                 Trivy
+    |                 Checkov
+    |                 Syft
+    |                 Grype
+    |
+    +------------------------+
+              |
+              v
+       Required Checks
+              |
+              v
+         Merge to Main
+              |
+              v
+        Docker Image
+              |
+              v
+             GHCR
+              |
+              v
+       Cosign Signing
+              |
+              v
+     Signature Verification
 ```
-
-The pipeline currently includes:
-
-```text
-test-and-build
-secret-scan
-container-scan
-```
-
----
 
 ## CI Validation
 
-GitHub Actions is used to:
+GitHub Actions is used to validate the application before merge.
 
-- Install application dependencies
-- Start the application
-- Test the health endpoint
-- Build the Docker image
+The CI workflow:
 
-Flow:
+- Installs application dependencies
+- Starts the application
+- Checks the health endpoint
+- Builds the Docker image
 
 ```text
 Checkout
-   ↓
-Install dependencies
-   ↓
-Start application
-   ↓
-Health check
-   ↓
-Docker build
+   |
+   v
+Install Dependencies
+   |
+   v
+Start Application
+   |
+   v
+Health Check
+   |
+   v
+Docker Build
 ```
-
----
 
 ## Secret Scanning
 
-Gitleaks is used to detect secrets committed to the repository.
+### Gitleaks
 
-The scanner runs automatically on Pull Requests.
+Gitleaks scans Git history and pull requests for exposed secrets.
 
-```text
-Pull Request
-     ↓
-Gitleaks
-     ↓
-Secret detected?
-   /        \
- Yes         No
-  ↓           ↓
-Fail         Pass
-```
+A fake secret was added during testing to confirm that the security gate was working correctly.
 
-A test secret was intentionally introduced during development to verify that the pipeline correctly detects leaks.
+The scan detected the secret and failed the pipeline.
 
-Gitleaks successfully identified the secret and failed the security check.
+The test secret was then removed from Git history before the branch was merged.
 
-The leaked value was then removed from Git history before the branch was allowed to continue.
+## Static Application Security Testing
 
----
+### Semgrep
 
-## Container Vulnerability Scanning
+Semgrep is used for static analysis of the application source code.
 
-Trivy is used to scan the Docker image for known vulnerabilities.
+A deliberately unsafe command execution example was added during testing to confirm that Semgrep could identify insecure code.
 
-The security gate currently checks for:
+The SAST job is included as part of the pull request security checks.
 
-```text
-HIGH
-CRITICAL
-```
+Where a finding is not relevant to the application architecture, the exception is documented instead of disabling the scanner entirely.
 
-If a High or Critical vulnerability is detected:
+## Dependency Monitoring
 
-```text
-Trivy
-  ↓
-Finding detected
-  ↓
-container-scan fails
-  ↓
-Pull Request blocked
-```
+### Dependabot
 
----
+Dependabot monitors:
 
-## Container Hardening
+- npm dependencies
+- GitHub Actions dependencies
 
-The original container image was improved after vulnerability scanning identified issues inside the runtime image.
+It automatically creates pull requests when dependency updates are available.
 
-The hardened Docker image includes:
+A cooldown period is also configured to avoid immediately adopting newly released versions.
 
-- Multi-stage build
-- Production-only dependencies
-- Updated Alpine packages
-- Non-root runtime user
-- Removal of unnecessary npm tooling
-- Reduced runtime attack surface
+## Docker Hardening
 
-The application runs as:
+The application uses a multi-stage Docker build.
+
+The runtime image was hardened by:
+
+- Installing production dependencies only
+- Running the application as a non-root user
+- Removing npm tooling from the final image
+- Updating Alpine packages
+- Reducing unnecessary runtime components
+- Upgrading the Node.js runtime when vulnerabilities were identified
+
+The application runs using:
 
 ```text
 uid=1000(node)
 ```
 
-instead of root.
+The final container does not require npm to run the application, so npm and related tooling are removed from the runtime stage.
 
-npm is also removed from the final runtime image because it is not required to run the application.
+## Container Vulnerability Scanning
 
----
+### Trivy
+
+Trivy scans the Docker image for vulnerabilities in:
+
+- Operating system packages
+- Application libraries
+
+The pipeline checks HIGH and CRITICAL severity findings.
+
+During the initial scan, several findings were traced back to npm tooling included in the runtime image rather than the application dependencies.
+
+The Docker image was changed to remove the unnecessary tooling and reduce the attack surface.
 
 ## Vulnerability Remediation
 
-The initial image contained multiple High and Critical vulnerabilities.
-
-Investigation showed that many findings came from unnecessary npm tooling included inside the runtime image rather than from the application dependencies.
-
-The remediation process was:
+The remediation process used throughout the project is:
 
 ```text
-Scan image
-   ↓
-Investigate findings
-   ↓
-Identify vulnerable components
-   ↓
-Remove unnecessary runtime tooling
-   ↓
-Upgrade OS packages
-   ↓
-Run application as non-root
-   ↓
-Rebuild image
-   ↓
+Scan
+  |
+  v
+Review Finding
+  |
+  v
+Identify Source
+  |
+  v
+Apply Fix
+  |
+  v
+Rebuild
+  |
+  v
 Rescan
 ```
 
-After hardening, the final Trivy scan returned:
+One example was the Node.js runtime.
+
+Grype identified multiple HIGH severity vulnerabilities in Node.js 20.
+
+The image was upgraded to Node.js 22 and scanned again.
+
+The Node.js HIGH findings were removed after the upgrade.
+
+## Grype
+
+Grype is used as an additional vulnerability scanner for the container image.
+
+The pipeline runs:
 
 ```text
-HIGH: 0
-CRITICAL: 0
+--only-fixed
+--fail-on high
 ```
 
----
+The current policy is:
+
+```text
+Fixable HIGH or CRITICAL
+        |
+        v
+   Pipeline fails
+
+
+No upstream fix available
+        |
+        v
+   Finding is reported
+```
+
+This prevents fixable high-severity vulnerabilities from being merged while avoiding permanent pipeline failures for issues that do not yet have an upstream patch.
+
+## SBOM Generation
+
+### Syft
+
+Syft generates a Software Bill of Materials from the Docker image.
+
+The SBOM is generated in CycloneDX JSON format.
+
+```text
+Docker Image
+     |
+     v
+    Syft
+     |
+     v
+CycloneDX SBOM
+```
+
+The generated SBOM contains package and component information such as:
+
+- npm packages
+- Alpine packages
+- Runtime binaries
+- Package versions
+
+The file is validated during the workflow and uploaded as a GitHub Actions artifact.
+
+## Infrastructure as Code Security
+
+Terraform files are stored under:
+
+```text
+infra/
+```
+
+The current Terraform example includes security controls for AWS S3 and KMS.
+
+Implemented controls include:
+
+- S3 public access blocking
+- S3 versioning
+- KMS encryption
+- KMS key rotation
+- Lifecycle configuration
+- Access logging
+
+### Checkov
+
+Checkov scans Terraform code as part of the security workflow.
+
+An insecure S3 configuration was used during testing to verify that the scanner correctly blocks insecure Infrastructure as Code.
+
+After the findings were reviewed, the Terraform configuration was hardened and scanned again.
+
+Some controls such as cross-region replication and event notifications were outside the scope of this lab and were handled using documented Checkov exceptions.
+
+## Container Registry
+
+Docker images are published to GitHub Container Registry.
+
+```text
+GitHub Container Registry
+```
+
+Images are tagged using the Git commit SHA.
+
+```text
+Source Code
+    |
+    v
+Commit SHA
+    |
+    v
+Container Image
+```
+
+This makes it possible to trace an image back to the source revision that produced it.
+
+## Container Image Signing
+
+### Cosign
+
+Cosign is used to sign the container images pushed to GHCR.
+
+The project uses keyless signing instead of storing a long-lived private signing key.
+
+```text
+GitHub Actions
+      |
+      v
+OIDC Token
+      |
+      v
+Cosign
+      |
+      v
+Signed Image
+```
+
+After signing, the pipeline verifies the signature.
+
+## GitHub OIDC
+
+GitHub Actions OIDC is used by Cosign for keyless signing.
+
+The workflow requests a short-lived identity token from GitHub instead of using a permanent signing credential.
+
+This removes the need to keep a private signing key in GitHub Secrets.
+
+## GitHub Actions Hardening
+
+Third-party GitHub Actions are pinned to immutable commit SHAs instead of mutable version tags.
+
+Example:
+
+```yaml
+uses: actions/checkout@<commit-sha>
+```
+
+Container-based tools are also pinned to image digests where appropriate.
+
+Example:
+
+```text
+anchore/grype@sha256:<digest>
+```
+
+This reduces the risk of a workflow dependency changing unexpectedly.
 
 ## Branch Protection
 
 The `main` branch is protected using GitHub Rulesets.
 
-Changes must go through Pull Requests.
+Changes must go through pull requests.
 
-Required checks include:
+The project currently uses checks such as:
 
 ```text
 test-and-build
 secret-scan
 container-scan
+sast-scan
+iac-scan
+sbom-generate
+grype-scan
 ```
 
-A change cannot be merged if one of the required checks fails.
-
----
-
-## Security Architecture
-
-```text
-Developer
-    ↓
-Feature Branch
-    ↓
-Pull Request
-    │
-    ├── CI
-    │   ├── Install dependencies
-    │   ├── Health check
-    │   └── Docker build
-    │
-    ├── Gitleaks
-    │   └── Secret scanning
-    │
-    └── Trivy
-        └── Container vulnerability scanning
-            ↓
-      Required Checks
-            ↓
-       Merge to Main
-```
-
----
+Required checks must pass before a pull request can be merged.
 
 ## Repository Structure
 
 ```text
 devsecops-secure-pipeline/
-│
+|
 ├── .github/
+│   ├── dependabot.yml
 │   └── workflows/
 │       ├── ci.yml
 │       └── security.yml
-│
+|
 ├── app/
 │   ├── package.json
 │   ├── package-lock.json
 │   └── server.js
-│
+|
 ├── docker/
 │   └── Dockerfile
-│
+|
+├── infra/
+│   └── main.tf
+|
 ├── docs/
 ├── scripts/
 ├── security/
@@ -268,79 +421,96 @@ devsecops-secure-pipeline/
 └── README.md
 ```
 
----
-
 ## Security Controls
 
-| Security Control                 | Technology      | Status |
-| -------------------------------- | --------------- | ------ |
-| CI pipeline                      | GitHub Actions  | ✅     |
-| Application health check         | curl            | ✅     |
-| Docker build validation          | Docker          | ✅     |
-| Secret scanning                  | Gitleaks        | ✅     |
-| Git history secret detection     | Gitleaks        | ✅     |
-| Container vulnerability scanning | Trivy           | ✅     |
-| High/Critical vulnerability gate | Trivy           | ✅     |
-| Multi-stage container build      | Docker          | ✅     |
-| Non-root runtime                 | Docker          | ✅     |
-| Reduced runtime attack surface   | Docker          | ✅     |
-| Protected main branch            | GitHub Rulesets | ✅     |
-| Required security checks         | GitHub Rulesets | ✅     |
-
----
+| Control | Tool |
+| --- | --- |
+| CI validation | GitHub Actions |
+| Health check | curl |
+| Secret scanning | Gitleaks |
+| SAST | Semgrep |
+| Dependency monitoring | Dependabot |
+| Container scanning | Trivy |
+| Additional vulnerability scanning | Grype |
+| IaC scanning | Checkov |
+| SBOM generation | Syft |
+| SBOM format | CycloneDX |
+| Container hardening | Docker |
+| Non-root runtime | Docker |
+| Container registry | GHCR |
+| Image signing | Cosign |
+| Keyless identity | GitHub OIDC |
+| Signature verification | Cosign |
+| Branch protection | GitHub Rulesets |
 
 ## Technologies
 
-```text
-Git
-GitHub
-GitHub Actions
-Node.js
-Docker
-Gitleaks
-Trivy
-```
-
----
-
-## Key Security Concepts
-
-This project demonstrates:
-
-- Shift-left security
-- Secure CI/CD pipelines
-- Secret detection
-- Vulnerability management
-- Container hardening
-- Least privilege
-- Attack surface reduction
-- Security gates
-- Protected branches
-- Pull Request-based deployment controls
-
----
-
-## Next Steps
-
-Planned improvements include:
-
-- Dependabot
+- Git
+- GitHub
+- GitHub Actions
+- Node.js
+- Docker
+- Terraform
+- AWS
+- GitHub Container Registry
+- Gitleaks
 - Semgrep
+- Dependabot
+- Trivy
 - Checkov
-- Dependency scanning
-- SBOM generation with Syft
+- Syft
+- CycloneDX
 - Grype
 - Cosign
-- Terraform security scanning
-- Kubernetes security controls
-- Kyverno
-- Falco
-- Monitoring and alerting
+- GitHub OIDC
 
----
+## Security Approach
+
+The project follows a simple process when a security issue is detected:
+
+```text
+Detect
+  |
+  v
+Review
+  |
+  v
+Understand
+  |
+  v
+Fix
+  |
+  v
+Validate
+  |
+  v
+Automate
+```
+
+The goal is to understand scanner findings before deciding how they should be handled.
+
+Where a fix exists, the vulnerable component is updated or removed.
+
+Where no upstream fix exists, the finding remains visible without unnecessarily blocking the pipeline.
+
+Where a control does not apply to the current architecture, the exception is documented.
+
+## Current Scope
+
+The current repository focuses on:
+
+- Secure CI/CD
+- Container security
+- Infrastructure as Code scanning
+- Vulnerability management
+- SBOM generation
+- Software supply chain security
+- Container signing
+
+Kubernetes and runtime security will be covered separately rather than adding unrelated controls to this repository.
 
 ## Purpose
 
-The purpose of this project is to build practical DevSecOps experience through implementation, testing, troubleshooting, and remediation.
+This project was built as a practical DevSecOps lab.
 
-The focus is not only on using security tools, but on understanding findings and enforcing security controls inside the CI/CD pipeline.
+The main goal is to gain hands-on experience with integrating security into CI/CD, investigating security findings, applying fixes, and enforcing security checks before code is merged.
